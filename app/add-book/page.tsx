@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useState, type FormEvent } from "react";
+import { toast } from "react-hot-toast";
+import { createBook, type CreateBookInput } from "../services/books";
+import type { AddMode } from "../types/book";
 
 const inputClassName =
   "mt-2 w-full rounded-[3px] border border-[#d9cfc1] bg-[#fffdfa] px-3 py-3 text-sm text-[#29231e] outline-none transition placeholder:text-[#b7aa99] focus:border-[#9d6d43] focus:ring-2 focus:ring-[#9d6d43]/15";
@@ -9,6 +13,58 @@ const labelClassName =
   "block text-[11px] font-medium uppercase tracking-[.08em] text-[#81766b] [font-family:var(--font-dm-mono)]";
 
 export default function AddBookPage() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function addBook(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const token = localStorage.getItem("authToken");
+
+    if (!token) {
+      toast.error("Log in before adding a book.");
+      return;
+    }
+
+    const formData = new FormData(form);
+    const optionalString = (name: string): string | null => {
+      const value = String(formData.get(name) ?? "").trim();
+      return value || null;
+    };
+    const pageCountValue = String(formData.get("page_count") ?? "").trim();
+    const bookshelfIDValue = String(formData.get("bookshelf_id") ?? "").trim();
+    const addMode = String(formData.get("add_mode") ?? "");
+
+    const book: CreateBookInput = {
+      title: String(formData.get("title") ?? "").trim(),
+      authors: String(formData.get("authors") ?? "")
+        .split("\n")
+        .map((author) => author.trim())
+        .filter(Boolean),
+      cover_url: optionalString("cover_url"),
+      description: optionalString("description"),
+      page_count: pageCountValue ? Number(pageCountValue) : null,
+      published_date: optionalString("published_date"),
+      publisher: optionalString("publisher"),
+      isbn: optionalString("isbn"),
+      add_mode: addMode as AddMode,
+      volume_id: optionalString("volume_id"),
+      bookshelf_id: Number(bookshelfIDValue),
+    };
+
+    setIsSubmitting(true);
+    try {
+      await createBook(token, book);
+      toast.success("Book added to your library.");
+      form.reset();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not add the book.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_88%_10%,#f6ecdd_0,transparent_24rem),#fbf9f5]">
       <header className="mx-auto flex h-[65px] max-w-[1270px] items-center justify-between border-b border-[#e7dfd3] px-5 sm:h-[74px] sm:px-[42px]">
@@ -43,6 +99,7 @@ export default function AddBookPage() {
 
         <form
           className="mt-9 rounded-[4px] border border-[#e7dfd3] bg-[#fffdfa]/80 p-5 shadow-[0_12px_35px_rgba(67,45,25,.06)] sm:p-8"
+          onSubmit={addBook}
         >
           <div className="grid gap-6 sm:grid-cols-2">
             <label className={`${labelClassName} sm:col-span-2`}>
@@ -131,10 +188,11 @@ export default function AddBookPage() {
           <div className="mt-7 border-t border-[#e7dfd3] pt-5">
             <div className="flex flex-wrap items-center gap-3">
               <button
-                className="cursor-pointer rounded-[3px] border-0 bg-[#9d6d43] px-5 py-3 text-[13px] font-semibold text-[#fffaf4] transition hover:bg-[#83572f]"
-                type="button"
+                className="cursor-pointer rounded-[3px] border-0 bg-[#9d6d43] px-5 py-3 text-[13px] font-semibold text-[#fffaf4] transition hover:bg-[#83572f] disabled:cursor-wait disabled:opacity-60"
+                type="submit"
+                disabled={isSubmitting}
               >
-                Add to library
+                {isSubmitting ? "Adding book..." : "Add to library"}
               </button>
               <Link
                 className="rounded-[3px] px-4 py-3 text-[13px] font-medium text-[#81766b] no-underline transition hover:bg-[#f1ece5]"

@@ -1,6 +1,13 @@
 "use client";
 
+"use client";
+
 import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { toast } from "react-hot-toast";
+import { getBookById, updateBook, type CreateBookInput } from "../../services/books";
+import type { AddMode, Book } from "../../types/book";
 
 const inputClassName =
   "mt-2 w-full rounded-[3px] border border-[#d9cfc1] bg-[#fffdfa] px-3 py-3 text-sm text-[#29231e] outline-none transition placeholder:text-[#b7aa99] focus:border-[#9d6d43] focus:ring-2 focus:ring-[#9d6d43]/15";
@@ -9,6 +16,135 @@ const labelClassName =
   "block text-[11px] font-medium uppercase tracking-[.08em] text-[#81766b] [font-family:var(--font-dm-mono)]";
 
 export default function UpdateBookPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="grid min-h-screen place-items-center bg-[#fbf9f5] text-[#81766b]">
+          <p className="text-[11px] uppercase tracking-[.09em] [font-family:var(--font-dm-mono)]">
+            Loading book details...
+          </p>
+        </main>
+      }
+    >
+      <UpdateBookPageContent />
+    </Suspense>
+  );
+}
+
+function UpdateBookPageContent() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const [book, setBook] = useState<Book | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      toast.error("Log in to update this book.");
+      setIsLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    getBookById(token, id)
+      .then((loadedBook) => {
+        if (isActive) setBook(loadedBook);
+      })
+      .catch((error: unknown) => {
+        if (isActive) {
+          toast.error(
+            error instanceof Error ? error.message : "Could not load this book.",
+          );
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [id]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      toast.error("Log in to update this book.");
+      return;
+    }
+
+    const formData = new FormData(form);
+    const optionalString = (name: string): string | null => {
+      const value = String(formData.get(name) ?? "").trim();
+      return value || null;
+    };
+    const pageCountValue = String(formData.get("page_count") ?? "").trim();
+
+    const updatedBook: CreateBookInput = {
+      title: String(formData.get("title") ?? "").trim(),
+      authors: String(formData.get("authors") ?? "")
+        .split("\n")
+        .map((author) => author.trim())
+        .filter(Boolean),
+      cover_url: optionalString("cover_url"),
+      description: optionalString("description"),
+      page_count: pageCountValue ? Number(pageCountValue) : null,
+      published_date: optionalString("published_date"),
+      publisher: optionalString("publisher"),
+      isbn: optionalString("isbn"),
+      add_mode: String(formData.get("add_mode") ?? "MANUAL") as AddMode,
+      volume_id: optionalString("volume_id"),
+      bookshelf_id: Number(formData.get("bookshelf_id")),
+    };
+
+    setIsSubmitting(true);
+    try {
+      await updateBook(token, updatedBook, id);
+      toast.success("Book updated.");
+      router.push(`/${id}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not update this book.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#fbf9f5] text-[#81766b]">
+        <p className="text-[11px] uppercase tracking-[.09em] [font-family:var(--font-dm-mono)]">
+          Loading book details...
+        </p>
+      </main>
+    );
+  }
+
+  if (!book) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#fbf9f5] p-5 text-center">
+        <div>
+          <p className="text-[11px] uppercase tracking-[.09em] text-[#9d6d43] [font-family:var(--font-dm-mono)]">
+            Elastos library
+          </p>
+          <h1 className="mt-3 text-4xl [font-family:var(--font-playfair)]">
+            Book not found or unavailable.
+          </h1>
+          <Link
+            className="mt-7 inline-block bg-[#9d6d43] px-5 py-3 text-sm font-semibold text-white"
+            href="/"
+          >
+            Back to library
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_88%_10%,#f6ecdd_0,transparent_24rem),#fbf9f5]">
       <header className="mx-auto flex h-[65px] max-w-[1270px] items-center justify-between border-b border-[#e7dfd3] px-5 sm:h-[74px] sm:px-[42px]">
@@ -43,6 +179,7 @@ export default function UpdateBookPage() {
 
         <form
           className="mt-9 rounded-[4px] border border-[#e7dfd3] bg-[#fffdfa]/80 p-5 shadow-[0_12px_35px_rgba(67,45,25,.06)] sm:p-8"
+          onSubmit={handleSubmit}
         >
           <div className="grid gap-6 sm:grid-cols-2">
             <label className={`${labelClassName} sm:col-span-2`}>
@@ -53,6 +190,7 @@ export default function UpdateBookPage() {
                 type="text"
                 autoComplete="off"
                 placeholder="Book title"
+                defaultValue={book.title}
                 required
               />
             </label>
@@ -63,13 +201,14 @@ export default function UpdateBookPage() {
                 className={`${inputClassName} min-h-24 resize-y`}
                 name="authors"
                 placeholder={"One author per line"}
+                defaultValue={book.authors.join("\n")}
                 required
               />
             </label>
 
             <label className={labelClassName}>
               Update method <span className="text-[#9c4e41]">*</span>
-              <select className={inputClassName} name="add_mode" defaultValue="MANUAL" required>
+              <select className={inputClassName} name="add_mode" defaultValue={book.add_mode} required>
                 <option value="MANUAL">Manual</option>
                 <option value="SCAN">Scanned</option>
                 <option value="SEARCH">Search</option>
@@ -83,39 +222,39 @@ export default function UpdateBookPage() {
                 name="bookshelf_id"
                 type="number"
                 min="1"
-                defaultValue="1"
+                defaultValue={book.bookshelf_id}
                 required
               />
             </label>
 
             <label className={labelClassName}>
               ISBN
-              <input className={inputClassName} name="isbn" type="text" placeholder="ISBN" />
+              <input className={inputClassName} name="isbn" type="text" placeholder="ISBN" defaultValue={book.isbn ?? ""} />
             </label>
 
             <label className={labelClassName}>
               Publisher
-              <input className={inputClassName} name="publisher" type="text" placeholder="Publisher" />
+              <input className={inputClassName} name="publisher" type="text" placeholder="Publisher" defaultValue={book.publisher ?? ""} />
             </label>
 
             <label className={labelClassName}>
               Published date
-              <input className={inputClassName} name="published_date" type="text" placeholder="e.g. 1937 or 1937-09-21" />
+              <input className={inputClassName} name="published_date" type="text" placeholder="e.g. 1937 or 1937-09-21" defaultValue={book.published_date ?? ""} />
             </label>
 
             <label className={labelClassName}>
               Page count
-              <input className={inputClassName} name="page_count" type="number" min="1" placeholder="Number of pages" />
+              <input className={inputClassName} name="page_count" type="number" min="1" placeholder="Number of pages" defaultValue={book.page_count ?? ""} />
             </label>
 
             <label className={`${labelClassName} sm:col-span-2`}>
               Cover image URL
-              <input className={inputClassName} name="cover_url" type="url" placeholder="https://" />
+              <input className={inputClassName} name="cover_url" type="url" placeholder="https://" defaultValue={book.cover_url ?? ""} />
             </label>
 
             <label className={`${labelClassName} sm:col-span-2`}>
               Volume ID
-              <input className={inputClassName} name="volume_id" type="text" placeholder="Optional external volume ID" />
+              <input className={inputClassName} name="volume_id" type="text" placeholder="Optional external volume ID" defaultValue={book.volume_id ?? ""} />
             </label>
 
             <label className={`${labelClassName} sm:col-span-2`}>
@@ -124,6 +263,7 @@ export default function UpdateBookPage() {
                 className={`${inputClassName} min-h-28 resize-y`}
                 name="description"
                 placeholder="Short description of the book"
+                defaultValue={book.description ?? ""}
               />
             </label>
           </div>
@@ -131,10 +271,11 @@ export default function UpdateBookPage() {
           <div className="mt-7 border-t border-[#e7dfd3] pt-5">
             <div className="flex flex-wrap items-center gap-3">
               <button
-                className="cursor-pointer rounded-[3px] border-0 bg-[#9d6d43] px-5 py-3 text-[13px] font-semibold text-[#fffaf4] transition hover:bg-[#83572f]"
-                type="button"
+                className="cursor-pointer rounded-[3px] border-0 bg-[#9d6d43] px-5 py-3 text-[13px] font-semibold text-[#fffaf4] transition hover:bg-[#83572f] disabled:cursor-wait disabled:opacity-60"
+                type="submit"
+                disabled={isSubmitting}
               >
-                Update in library
+                {isSubmitting ? "Updating book..." : "Update in library"}
               </button>
               <Link
                 className="rounded-[3px] px-4 py-3 text-[13px] font-medium text-[#81766b] no-underline transition hover:bg-[#f1ece5]"

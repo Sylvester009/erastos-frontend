@@ -1,4 +1,10 @@
+"use client";
+
 import Link from "next/link";
+import { useState, type FormEvent } from "react";
+import { createUser } from "../services/user";
+import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
 
 const inputClassName =
   "mt-2 w-full rounded-[3px] border border-[#d9cfc1] bg-[#fffdfa] px-3 py-3.5 text-sm text-[#29231e] outline-none transition placeholder:text-[#b7aa99] focus:border-[#9d6d43] focus:ring-2 focus:ring-[#9d6d43]/15";
@@ -7,6 +13,36 @@ const labelClassName =
   "block text-[11px] font-medium uppercase tracking-[.08em] text-[#81766b] [font-family:var(--font-dm-mono)]";
 
 export default function SignupPage() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const router = useRouter();
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const username = String(formData.get("username") ?? "").trim();
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+
+    setIsSubmitting(true);
+    try {
+      await createUser(username, email, password);
+      localStorage.setItem("authUsername", username);
+      toast.success("User created successfully!");
+      form.reset();
+      router.push("/login");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to create user. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_85%_12%,#f2e4d1_0,transparent_25rem),#fbf9f5]">
       <header className="mx-auto flex h-[74px] max-w-[1270px] items-center justify-between border-b border-[#e7dfd3] px-5 sm:px-[42px]">
@@ -66,7 +102,7 @@ export default function SignupPage() {
               Sign up to start building your personal library.
             </p>
 
-            <form className="mt-7 space-y-5">
+            <form className="mt-7 space-y-5" onSubmit={handleSubmit}>
               <label className={labelClassName}>
                 Username
                 <input
@@ -101,10 +137,11 @@ export default function SignupPage() {
                 />
               </label>
               <button
-                className="w-full cursor-pointer rounded-[3px] border-0 bg-[#9d6d43] px-5 py-3.5 text-[13px] font-semibold text-[#fffaf4] transition hover:bg-[#83572f]"
-                type="button"
+                className="w-full cursor-pointer rounded-[3px] border-0 bg-[#9d6d43] px-5 py-3.5 text-[13px] font-semibold text-[#fffaf4] transition hover:bg-[#83572f] disabled:cursor-wait disabled:opacity-60"
+                type="submit"
+                disabled={isSubmitting}
               >
-                Create account
+                {isSubmitting ? "Creating account..." : "Create account"}
               </button>
             </form>
 

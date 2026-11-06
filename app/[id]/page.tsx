@@ -3,72 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense } from "react";
-
-type Book = {
-  id: string;
-  title: string;
-  author: string;
-  mark: string;
-  cover: string;
-  art: string;
-  artText?: string;
-  synopsis?: string;
-  year?: string;
-  category?: string;
-};
-
-const books = [
-  {
-    id: "6",
-    title: "The Midnight Library",
-    author: "Matt Haig",
-    mark: "M",
-    cover: "bg-[#a8bfca] text-[#173a51]",
-    art: "h-[52%] w-[115%] -bottom-[21%] -right-[28%] rotate-[-20deg] bg-[#dce4df]",
-  },
-  {
-    id: "1",
-    title: "The Song of Achilles",
-    author: "Madeline Miller",
-    mark: "A",
-    cover: "bg-[#e4d2ab] text-[#6f3d28]",
-    art: "-bottom-3 left-4 text-[65px] font-[family-name:var(--font-playfair)] opacity-[.13]",
-    artText: "ACHILLES",
-  },
-  {
-    id: "2",
-    title: "Atomic Habits",
-    author: "James Clear",
-    mark: "A",
-    cover: "bg-[#cb7a45] text-[#fff3df]",
-    art: "-top-7 right-7 size-[85px] rounded-full border border-white/50",
-  },
-  {
-    id: "3",
-    title: "The Creative Act",
-    author: "Rick Rubin",
-    mark: "R",
-    cover: "bg-[#242321] text-[#e2c89d]",
-    art: "left-12 top-4 size-[170px] rounded-full border border-[#a37753]",
-  },
-  {
-    id: "4",
-    title: "Tomorrow, and Tomorrow",
-    author: "Gabrielle Zevin",
-    mark: "T",
-    cover: "bg-[#ccada2] text-[#542f2b]",
-    art: "right-4 top-6 text-[180px] leading-[.8] font-[family-name:var(--font-playfair)] opacity-[.16]",
-    artText: "T",
-  },
-  {
-    id: "5",
-    title: "Pachinko",
-    author: "Min Jin Lee",
-    mark: "P",
-    cover: "bg-[#70867a] text-[#f2ead7]",
-    art: "-left-[10%] bottom-5 h-[70px] w-[120%] rotate-[-9deg] bg-[#526a5c]/75",
-  },
-];
+import { useEffect, useState } from "react";
+import type { Book } from "../types/book";
+import { deleteBook, getBookById } from "../services/books";
+import toast from "react-hot-toast";
 
 export default function BookPage() {
   return (
@@ -89,9 +27,53 @@ export default function BookPage() {
 function BookPageContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const book: Book | undefined = books.find((b) => b.id === params.id);
+  const [book, setBook] = useState<Book | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  if (!book) {
+  useEffect(() => {
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      setErrorMessage("Log in to see your book.");
+      setIsLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoading(true);
+    setErrorMessage("");
+    getBookById(token, params.id)
+      .then((result) => {
+        if (isActive) setBook(result);
+      })
+      .catch((error: unknown) => {
+        if (!isActive) return;
+        const message =
+          error instanceof Error ? error.message : "Could not load your book.";
+        setErrorMessage(message);
+        toast.error(message);
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [params.id]);
+
+  if (isLoading) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#fbf9f5] text-[#81766b]">
+        <p className="text-[11px] uppercase tracking-[.09em] [font-family:var(--font-dm-mono)]">
+          Loading book details...
+        </p>
+      </main>
+    );
+  }
+
+  if (errorMessage || !book) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#fbf9f5] p-5 text-center">
         <div>
@@ -99,7 +81,7 @@ function BookPageContent() {
             Elastos library
           </p>
           <h1 className="mt-3 text-4xl [font-family:var(--font-playfair)]">
-            This book is not on the shelf.
+            {errorMessage || "This book is not on the shelf."}
           </h1>
           <Link
             className="mt-7 inline-block bg-[#9d6d43] px-5 py-3 text-sm font-semibold text-white"
@@ -112,10 +94,35 @@ function BookPageContent() {
     );
   }
 
-  function deleteBook() {
-    if (window.confirm(`Delete “${book?.title}” from the library?`))
+  async function handleDeleteBook() {
+    if (!book) return;
+    if (!window.confirm(`Delete “${book.title}” from the library?`)) return;
+
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      toast.error("Log in to delete this book.");
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await deleteBook(token, book.id);
+      toast.success("Book deleted.");
       router.push("/");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not delete the book.",
+      );
+      setIsDeleting(false);
+    }
   }
+
+  const artText =
+    book.publisher?.slice(0, 10).toUpperCase() ?? book.title.slice(0, 10).toUpperCase();
+  const mark = book.title.slice(0, 1).toUpperCase();
+  const coverStyle = book.cover_url
+    ? { backgroundImage: `url("${book.cover_url}")` }
+    : undefined;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_10%_90%,#f1e4d2_0,transparent_25rem),#fbf9f5]">
@@ -145,35 +152,43 @@ function BookPageContent() {
           <h1 className="mb-2 text-[clamp(38px,4vw,56px)] font-semibold leading-[.98] tracking-[-2px] [font-family:var(--font-playfair)]">
             {book.title}
           </h1>
-          <p className="text-[17px] text-[#81766b]">by {book.author}</p>
+          <p className="text-[17px] text-[#81766b]">
+            by {book.authors.join(", ")}
+          </p>
           <p className="mt-8 max-w-sm text-[15px] leading-7 text-[#554c44]">
-            {book.synopsis}
+            {book.description || "No description is available for this book."}
           </p>
           <dl className="mt-9 grid max-w-sm grid-cols-2 gap-y-5 border-t border-[#e7dfd3] pt-6 text-sm">
             <div>
               <dt className="text-[10px] uppercase tracking-[.08em] text-[#9d6d43] [font-family:var(--font-dm-mono)]">
                 Published
               </dt>
-              <dd className="mt-1 font-medium">{book.year}</dd>
+              <dd className="mt-1 font-medium">
+                {book.published_date || "Not specified"}
+              </dd>
             </div>
             <div>
               <dt className="text-[10px] uppercase tracking-[.08em] text-[#9d6d43] [font-family:var(--font-dm-mono)]">
                 Shelf
               </dt>
-              <dd className="mt-1 font-medium">{book.category}</dd>
+              <dd className="mt-1 font-medium">{book.bookshelf_id}</dd>
             </div>
           </dl>
         </div>
 
         <div className="order-1 mx-auto w-full max-w-[390px] md:order-2">
           <div
-            className={`relative aspect-[.69/1] w-full overflow-hidden rounded-[3px_8px_8px_3px] shadow-[18px_25px_28px_rgba(67,45,25,.22),-7px_10px_12px_rgba(67,45,25,.1)] ${book.cover}`}
+            className={`relative aspect-[.69/1] w-full overflow-hidden rounded-[3px_8px_8px_3px] bg-[#a8bfca] bg-cover bg-center text-[#173a51] shadow-[18px_25px_28px_rgba(67,45,25,.22),-7px_10px_12px_rgba(67,45,25,.1)]`}
+            style={coverStyle}
           >
             <span className="absolute inset-y-0 left-0 z-20 w-[18px] border-r border-white/25 bg-black/15" />
-            <span className={`absolute ${book.art}`}>{book.artText}</span>
+            <span className="absolute -bottom-[14%] -right-[22%] h-[52%] w-[115%] rotate-[-20deg] bg-white/25" />
+            <span className="absolute bottom-5 left-7 text-5xl font-semibold opacity-20 [font-family:var(--font-playfair)]">
+              {artText}
+            </span>
             <span className="absolute inset-[40px_42px_35px_52px] z-10 flex flex-col justify-between">
               <i className="text-[55px] font-medium not-italic leading-none [font-family:var(--font-playfair)]">
-                {book.mark}
+                {mark}
               </i>
               <b className="max-w-[82%] text-[clamp(32px,4vw,50px)] font-semibold leading-[.98] tracking-[-1.5px] [font-family:var(--font-playfair)]">
                 {book.title}
@@ -200,10 +215,11 @@ function BookPageContent() {
               Update book
             </Link>
             <button
-              onClick={deleteBook}
-              className="cursor-pointer rounded-[3px] border border-[#d9b4a8] bg-transparent px-4 py-3 text-[13px] font-semibold text-[#9c4e41] transition hover:bg-[#fbefea]"
+              onClick={handleDeleteBook}
+              disabled={isDeleting}
+              className="cursor-pointer rounded-[3px] border border-[#d9b4a8] bg-transparent px-4 py-3 text-[13px] font-semibold text-[#9c4e41] transition hover:bg-[#fbefea] disabled:cursor-wait disabled:opacity-60"
             >
-              Delete book
+              {isDeleting ? "Deleting..." : "Delete book"}
             </button>
           </div>
         </aside>
